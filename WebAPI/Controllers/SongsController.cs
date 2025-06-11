@@ -5,6 +5,7 @@ using System.Threading.Tasks;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using WebAPI.DTO;
 using WebAPI.Models;
 
 namespace WebAPI.Controllers
@@ -20,12 +21,12 @@ namespace WebAPI.Controllers
             _context = context;
         }
 
-        // GET: api/Songs
-        [HttpGet]
-        public async Task<ActionResult<IEnumerable<Song>>> GetSongs()
-        {
-            return await _context.Songs.ToListAsync();
-        }
+        //// GET: api/Songs
+        //[HttpGet]
+        //public async Task<ActionResult<IEnumerable<Song>>> GetSongs()
+        //{
+        //    return await _context.Songs.ToListAsync();
+        //}
 
         // GET: api/Songs/5
         [HttpGet("{id}")]
@@ -102,6 +103,26 @@ namespace WebAPI.Controllers
         private bool SongExists(int id)
         {
             return _context.Songs.Any(e => e.SongId == id);
+        }
+        // GET: api/Songs
+        [HttpGet]
+        public async Task<ActionResult<IEnumerable<SongDto>>> GetSongs()
+        {
+            var songs = await _context.Songs
+                .Include(s => s.Artist) // join bảng Artist
+                .Select(s => new SongDto
+                {
+                    SongId = s.SongId,
+                    SongName = s.SongName,
+                    SongImage = s.SongImage,
+                    LinkSong = s.LinkSong,
+                    LinkLrc = s.LinkLrc,
+                    Views = s.Views,
+                    ArtistName = s.Artist != null ? s.Artist.ArtistName : "Unknown"
+                })
+                .ToListAsync();
+
+            return Ok(songs);
         }
     }
 }
