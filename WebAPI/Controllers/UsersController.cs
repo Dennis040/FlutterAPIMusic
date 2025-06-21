@@ -1,11 +1,15 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.IdentityModel.Tokens.Jwt;
 using System.Linq;
+using System.Security.Claims;
+using System.Text;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Identity.Data;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.IdentityModel.Tokens;
 using WebAPI.DTO;
 using WebAPI.Models;
 
@@ -16,10 +20,12 @@ namespace WebAPI.Controllers
     public class UsersController : ControllerBase
     {
         private readonly DemoMusicContext _context;
+        private readonly IConfiguration _configuration;
 
-        public UsersController(DemoMusicContext context)
+        public UsersController(DemoMusicContext context, IConfiguration configuration)
         {
             _context = context;
+            _configuration = configuration;
         }
 
         // GET: api/Users
@@ -122,8 +128,40 @@ namespace WebAPI.Controllers
 
             // Optionally hide the password when returning the user object  
             user.Password = null;
+            // Tạo access token (ví dụ JWT)
+            var token = GenerateJwtToken(user); // bạn cần tự tạo hàm này
 
+            // Trả user + token
+            return Ok(new
+            {
+                accessToken = token,
+                userId = user.UserId,
+                username = user.Username,
+                email = user.Email,
+            });
             return Ok(user);
+        }
+        private string GenerateJwtToken(User user)
+        {
+            var tokenHandler = new JwtSecurityTokenHandler();
+            var key = Encoding.ASCII.GetBytes(_configuration["Jwt:Key"]);
+
+            var tokenDescriptor = new SecurityTokenDescriptor
+            {
+                Subject = new ClaimsIdentity(new[]
+                {
+                    new Claim(ClaimTypes.NameIdentifier, user.UserId.ToString()),
+                    new Claim(ClaimTypes.Name, user.Username),
+                    new Claim(ClaimTypes.Role, user.Role)
+                }),
+                Expires = DateTime.UtcNow.AddHours(2),
+                SigningCredentials = new SigningCredentials(
+                    new SymmetricSecurityKey(key),
+                    SecurityAlgorithms.HmacSha256Signature)
+            };
+
+            var token = tokenHandler.CreateToken(tokenDescriptor);
+            return tokenHandler.WriteToken(token);
         }
         [HttpPost("register")]
         public async Task<ActionResult<User>> Register([FromBody] WebAPI.DTO.RegisterRequest request)
@@ -155,6 +193,39 @@ namespace WebAPI.Controllers
 
             return CreatedAtAction(nameof(GetUser), new { id = newUser.UserId }, newUser);
         }
+
+        [HttpGet("{userId}/lib")]
+        public async Task<ActionResult<UserLibDto>> GetUserProfile(int userId)
+        {
+            var user = await _context.Users
+                .Include(u => u.PlaylistUsers)
+                .Include(u => u.Artists)
+                .FirstOrDefaultAsync(u => u.UserId == userId);
+
+            if (user == null)
+            {
+                return NotFound("User not found.");
+            }
+
+            var result = new UserLibDto
+            {
+                Playlists = user.PlaylistUsers.Select(p => new PlaylistUserDto
+                {
+                    Id = p.Id,
+                    Name = p.Name
+                }).ToList(),
+
+                FavoriteArtists = user.Artists.Select(a => new ArtistDto
+                {
+                    ArtistId = a.ArtistId,
+                    ArtistName = a.ArtistName,
+                    ArtistImage = a.ArtistImage
+                }).ToList()
+            };
+
+            return Ok(result);
+        }
+
 
     }
 }
