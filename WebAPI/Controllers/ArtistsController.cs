@@ -5,6 +5,7 @@ using System.Threading.Tasks;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using WebAPI.DTO;
 using WebAPI.Models;
 
 namespace WebAPI.Controllers
@@ -81,6 +82,33 @@ namespace WebAPI.Controllers
             await _context.SaveChangesAsync();
 
             return CreatedAtAction("GetArtist", new { id = artist.ArtistId }, artist);
+        }
+
+        [HttpGet("playlists/{artistId}/songs")]
+        public async Task<ActionResult<IEnumerable<SongDto>>> GetSongsInArtist(int artistId)
+        {
+            var playlist = await _context.Artists
+                .Include(p => p.Songs)
+                .FirstOrDefaultAsync(p => p.ArtistId == artistId);
+
+            if (playlist == null)
+            {
+                return NotFound("Playlist not found.");
+            }
+
+            var songs = playlist.Songs
+                .Select(s => new SongDto
+                {
+                    SongId = s.SongId,
+                    SongName = s.SongName,
+                    SongImage = s.SongImage,
+                    LinkSong = s.LinkSong,
+                    LinkLrc = s.LinkLrc,
+                    Views = s.Views,
+                    ArtistName = s.Artist?.ArtistName,
+                }).ToList();
+
+            return Ok(songs);
         }
 
         // DELETE: api/Artists/5
