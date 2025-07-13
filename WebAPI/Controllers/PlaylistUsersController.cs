@@ -72,6 +72,19 @@ namespace WebAPI.Controllers
 
             return NoContent();
         }
+        [HttpPut("PlaylistUsersName/{id}")]
+        public async Task<IActionResult> PutPlaylistName(int id, [FromBody] UpdatePlaylistNameDto dto)
+        {
+            var playlist = await _context.PlaylistUsers.FindAsync(id);
+            if (playlist == null)
+                return NotFound();
+
+            playlist.Name = dto.PlaylistName;
+            await _context.SaveChangesAsync();
+
+            return Ok(); // hoặc NoContent()
+        }
+
 
         // POST: api/PlaylistUsers
         // To protect from overposting attacks, see https://go.microsoft.com/fwlink/?linkid=2123754
@@ -116,6 +129,27 @@ namespace WebAPI.Controllers
                 SongIds = playlist.Songs.Select(s => s.SongId).ToList()
             });
         }
+        [HttpPost("{playlistId}/songs/{songId}")]
+        public async Task<IActionResult> AddSongToPlaylist(int playlistId, int songId)
+        {
+            var playlist = await _context.PlaylistUsers
+                .Include(p => p.Songs)
+                .FirstOrDefaultAsync(p => p.Id == playlistId);
+
+            if (playlist == null) return NotFound("Playlist không tồn tại");
+
+            var song = await _context.Songs.FindAsync(songId);
+            if (song == null) return NotFound("Bài hát không tồn tại");
+
+            if (!playlist.Songs.Any(s => s.SongId == songId))
+            {
+                playlist.Songs.Add(song);
+                await _context.SaveChangesAsync();
+            }
+
+            return Ok();
+        }
+
 
         [HttpGet("playlists/{playlistId}/songs")]
         public async Task<ActionResult<IEnumerable<SongDto>>> GetSongsInPlaylist(int playlistId)
@@ -165,5 +199,25 @@ namespace WebAPI.Controllers
         {
             return _context.PlaylistUsers.Any(e => e.Id == id);
         }
+        [HttpDelete("playlists/{playlistId}/songs/{songId}")]
+        public async Task<IActionResult> RemoveSongFromPlaylist(int playlistId, int songId)
+        {
+            var playlist = await _context.PlaylistUsers
+                .Include(p => p.Songs)
+                .FirstOrDefaultAsync(p => p.Id == playlistId);
+
+            if (playlist == null)
+                return NotFound("Playlist không tồn tại");
+
+            var song = playlist.Songs.FirstOrDefault(s => s.SongId == songId);
+            if (song == null)
+                return NotFound("Bài hát không tồn tại trong playlist");
+
+            playlist.Songs.Remove(song);
+            await _context.SaveChangesAsync();
+
+            return Ok("Đã xoá bài hát khỏi playlist");
+        }
+
     }
 }

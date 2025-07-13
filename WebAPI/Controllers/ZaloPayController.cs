@@ -7,6 +7,7 @@ using System.Net.Http;
 using System.Net.Http.Headers;
 using System.Web;
 using WebAPI.Models;
+using Microsoft.EntityFrameworkCore;
 
 namespace WebAPI.Controllers
 {
@@ -15,6 +16,7 @@ namespace WebAPI.Controllers
     public class ZaloPayController : ControllerBase
     {
         private readonly HttpClient _httpClient;
+        private readonly DemoMusicContext _context;
 
         private readonly string app_id = "2553";
         private readonly string key1 = "PcY4iZIKFCIdgZvA6ueMcMHHUbRLYjPL";
@@ -22,9 +24,10 @@ namespace WebAPI.Controllers
         private readonly string createEndpoint = "https://sb-openapi.zalopay.vn/v2/create";
         private readonly string queryEndpoint = "https://sb-openapi.zalopay.vn/v2/query";
 
-        public ZaloPayController(IHttpClientFactory httpClientFactory)
+        public ZaloPayController(IHttpClientFactory httpClientFactory, DemoMusicContext context)
         {
             _httpClient = httpClientFactory.CreateClient();
+            _context = context;
         }
 
         [HttpPost("payment")]
@@ -126,5 +129,33 @@ namespace WebAPI.Controllers
 
             return Content(content, "application/json");
         }
+        [HttpPost("confirm")]
+        public async Task<IActionResult> ConfirmPayment([FromBody] ConfirmPaymentRequest request)
+        {
+            Console.WriteLine("UserId nhận được: " + request?.UserId);
+            Console.WriteLine("Amount: " + request?.Amount);
+            Console.WriteLine("DurationDays: " + request?.DurationDays);
+            var user = await _context.Users.FindAsync(request.UserId);
+            if (user == null)
+                return NotFound("User không tồn tại.");
+
+            user.Role = "premium";
+
+            var today = DateOnly.FromDateTime(DateTime.UtcNow);
+
+            var hoadon = new HoaDonAdmin
+            {
+                UserId = request.UserId,
+                Date = today,
+                Total = request.Amount,
+                EndDate = today.AddDays(request.DurationDays)
+            };
+
+            _context.HoaDonAdmins.Add(hoadon); // Tên DbSet trong DbContext
+            await _context.SaveChangesAsync();
+
+            return Ok(new { message = "Cập nhật thành công." });
+        }
+
     }
 }
