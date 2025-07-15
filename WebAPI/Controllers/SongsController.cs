@@ -21,6 +21,26 @@ namespace WebAPI.Controllers
             _context = context;
         }
 
+        [HttpGet("top")]
+        public async Task<IActionResult> GetTopSongs([FromQuery] int limit = 10)
+        {
+            var topSongs = await _context.Songs
+                .OrderByDescending(s => s.Views)
+                .Take(limit)
+                .Select(s => new {
+                    s.SongId,
+                    s.SongName,
+                    s.SongImage,
+                    s.LinkSong,
+                    s.LinkLrc,
+                    s.Views,
+                    artistName = s.Artist.ArtistName // <-- Lấy tên nghệ sĩ từ bảng Artist
+                })
+                .ToListAsync();
+
+            return Ok(topSongs);
+        }
+
         //// GET: api/Songs
         //[HttpGet]
         //public async Task<ActionResult<IEnumerable<Song>>> GetSongs()

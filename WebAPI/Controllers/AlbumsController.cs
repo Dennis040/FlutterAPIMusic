@@ -20,6 +20,41 @@ namespace WebAPI.Controllers
             _context = context;
         }
 
+        [HttpGet("top")]
+        public async Task<IActionResult> GetTopAlbums([FromQuery] int limit = 3)
+        {
+            var albums = await _context.Albums
+                .Select(a => new {
+                    a.AlbumId,
+                    a.AlbumName,
+                    a.AlbumImage,
+                    artistName = a.Artist.ArtistName // navigation property
+                })
+                .Take(limit)
+                .ToListAsync();
+
+            return Ok(albums);
+        }
+
+        [HttpGet("{albumId}/songs")]
+        public async Task<IActionResult> GetSongsByAlbum(int albumId)
+        {
+            var songs = await _context.Songs
+                .Where(s => s.AlbumId == albumId)
+                .Select(s => new {
+                    s.SongId,
+                    s.SongName,
+                    s.SongImage,
+                    s.LinkSong,
+                    s.LinkLrc,
+                    s.Views,
+                    artistName = s.Artist.ArtistName // hoặc lấy từ navigation property nếu có
+                })
+                .ToListAsync();
+
+            return Ok(songs);
+        }
+
         // GET: api/Albums
         [HttpGet]
         public async Task<ActionResult<IEnumerable<Album>>> GetAlbums()
