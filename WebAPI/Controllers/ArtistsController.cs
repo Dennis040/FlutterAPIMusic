@@ -110,6 +110,16 @@ namespace WebAPI.Controllers
 
             return Ok(songs);
         }
+        [HttpGet("check")]
+        public async Task<IActionResult> CheckUserFollowArtist(int userId, int artistId)
+        {
+            var isFollowing = await _context.Users
+                .Where(u => u.UserId == userId)
+                .SelectMany(u => u.Artists)
+                .AnyAsync(a => a.ArtistId == artistId);
+
+            return Ok(new { isFollowing });
+        }
 
         // DELETE: api/Artists/5
         [HttpDelete("{id}")]

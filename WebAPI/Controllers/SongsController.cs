@@ -144,5 +144,28 @@ namespace WebAPI.Controllers
 
             return Ok(songs);
         }
+        [HttpGet("recommendations/{userId}")]
+        public async Task<IActionResult> GetRecommendations(int userId)
+        {
+            var topTypeId = await _context.SongHistories
+                .Where(h => h.UserId == userId)
+                .Join(_context.Songs, h => h.SongId, s => s.SongId, (h, s) => s.TypeId)
+                .GroupBy(t => t)
+                .OrderByDescending(g => g.Count())
+                .Select(g => g.Key)
+                .FirstOrDefaultAsync();
+
+            var listenedSongIds = await _context.SongHistories
+                .Where(h => h.UserId == userId)
+                .Select(h => h.SongId)
+                .ToListAsync();
+
+            var recommendations = await _context.Songs
+                .Where(s => s.TypeId == topTypeId && !listenedSongIds.Contains(s.SongId))
+                .Take(10)
+                .ToListAsync();
+
+            return Ok(recommendations);
+        }
     }
 }
