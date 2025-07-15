@@ -20,11 +20,50 @@ namespace WebAPI.Controllers
             _context = context;
         }
 
+        // GET: api/Playlists/{playlistId}/songs
+        [HttpGet("{playlistId}/songs")]
+        public async Task<IActionResult> GetSongsInPlaylist(int playlistId)
+        {
+            var playlist = await _context.Playlists
+                .Include(p => p.Songs)
+                .FirstOrDefaultAsync(p => p.PlaylistId == playlistId);
+
+            if (playlist == null)
+                return NotFound();
+
+            var songs = playlist.Songs.Select(s => new {
+                songId = s.SongId,
+                songName = s.SongName,
+                songImage = s.SongImage,
+                linkSong = s.LinkSong
+                // ... các trường khác nếu cần
+            }).ToList();
+
+            return Ok(songs);
+        }
+
         // GET: api/Playlists
         [HttpGet]
-        public async Task<ActionResult<IEnumerable<Playlist>>> GetPlaylists()
+        public async Task<IActionResult> GetPlaylists()
         {
-            return await _context.Playlists.ToListAsync();
+            var playlists = await _context.Playlists
+                .Include(p => p.Songs)
+                .Select(p => new
+                {
+                    playlistId = p.PlaylistId,
+                    playlistName = p.PlaylistName,
+                    playlistImage = p.PlaylistImage,
+                    songs = p.Songs.Select(s => new {
+                        songId = s.SongId,
+                        songName = s.SongName,
+                        songImage = s.SongImage,
+                        linkSong = s.LinkSong
+                        // ... các trường khác nếu cần
+                    }).ToList()
+                })
+                .ToListAsync();
+
+            return Ok(playlists);
         }
 
         // GET: api/Playlists/5
