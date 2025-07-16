@@ -28,6 +28,78 @@ namespace WebAPI.Controllers
             _configuration = configuration;
         }
 
+        [HttpPost("{userId}/favorite-songs/{songId}")]
+        public async Task<IActionResult> AddFavoriteSong(int userId, int songId)
+        {
+            var user = await _context.Users
+                .Include(u => u.Songs)
+                .FirstOrDefaultAsync(u => u.UserId == userId);
+
+            var song = await _context.Songs.FindAsync(songId);
+
+            if (user == null || song == null)
+                return NotFound();
+
+            // Kiểm tra đã tồn tại chưa
+            if (!user.Songs.Any(s => s.SongId == songId))
+            {
+                user.Songs.Add(song);
+                await _context.SaveChangesAsync();
+            }
+
+            return NoContent();
+        }
+
+        [HttpDelete("{userId}/favorite-songs/{songId}")]
+        public async Task<IActionResult> RemoveFavoriteSong(int userId, int songId)
+        {
+            var user = await _context.Users
+                .Include(u => u.Songs)
+                .FirstOrDefaultAsync(u => u.UserId == userId);
+
+            if (user == null)
+                return NotFound("User not found.");
+
+            var song = user.Songs.FirstOrDefault(s => s.SongId == songId);
+
+            if (song == null)
+                return NotFound("Song not in favorites.");
+
+            user.Songs.Remove(song);
+            await _context.SaveChangesAsync();
+
+            return NoContent();
+        }
+
+
+        [HttpGet("{userId}/favorite-songs")]
+        public async Task<IActionResult> GetFavoriteSongs(int userId)
+        {
+            var user = await _context.Users
+                .Include(u => u.Songs)
+                .Include(u => u.Artists)
+                .FirstOrDefaultAsync(u => u.UserId == userId);
+
+            if (user == null)
+                return NotFound("User not found.");
+
+            var songs = user.Songs
+                .Select(s => new SongDto
+                {
+                    SongId = s.SongId,
+                    SongName = s.SongName,
+                    SongImage = s.SongImage,
+                    LinkSong = s.LinkSong,
+                    LinkLrc = s.LinkLrc,
+                    Views = s.Views,
+                    ArtistName = s.Artist != null ? s.Artist.ArtistName : "Unknown"
+                }).ToList();
+
+            return Ok(songs);
+        }
+
+
+
         // GET: api/Users
         [HttpGet]
         public async Task<ActionResult<IEnumerable<User>>> GetUsers()
