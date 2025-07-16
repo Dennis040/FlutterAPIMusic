@@ -181,19 +181,28 @@ namespace WebAPI.Controllers
 
         // DELETE: api/PlaylistUsers/5
         [HttpDelete("{id}")]
-        public async Task<IActionResult> DeletePlaylistUser(int id)
+        public async Task<IActionResult> DeletePlaylist(int id)
         {
-            var playlistUser = await _context.PlaylistUsers.FindAsync(id);
-            if (playlistUser == null)
+            // 1. Tìm playlist cần xoá
+            var playlist = await _context.PlaylistUsers
+                .Include(p => p.Songs) // Đảm bảo load quan hệ để EF theo dõi
+                .FirstOrDefaultAsync(p => p.Id == id);
+
+            if (playlist == null)
             {
                 return NotFound();
             }
 
-            _context.PlaylistUsers.Remove(playlistUser);
+            // 2. Xoá playlist
+            _context.PlaylistUsers.Remove(playlist);
+
+            // 3. Lưu thay đổi (EF sẽ tự xoá bảng trung gian do cascade)
             await _context.SaveChangesAsync();
 
             return NoContent();
         }
+
+
 
         private bool PlaylistUserExists(int id)
         {

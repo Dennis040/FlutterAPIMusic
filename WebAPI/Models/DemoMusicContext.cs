@@ -166,11 +166,11 @@ public partial class DemoMusicContext : DbContext
                     "PlaylistUserSong",
                     r => r.HasOne<Song>().WithMany()
                         .HasForeignKey("SongId")
-                        .OnDelete(DeleteBehavior.ClientSetNull)
+                        .OnDelete(DeleteBehavior.Cascade)
                         .HasConstraintName("FK__Playlist___SongI__5DCAEF64"),
                     l => l.HasOne<PlaylistUser>().WithMany()
                         .HasForeignKey("IdPlaylistUser")
-                        .OnDelete(DeleteBehavior.ClientSetNull)
+                        .OnDelete(DeleteBehavior.Cascade)
                         .HasConstraintName("FK__Playlist___ID_Pl__5CD6CB2B"),
                     j =>
                     {
