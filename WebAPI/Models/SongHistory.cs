@@ -11,9 +11,9 @@ public partial class SongHistory
 
     public int? SongId { get; set; }
 
-    public DateTime? PlayTime { get; set; }
+    public DateTime PlayTime { get; set; }
 
-    public virtual Song? Song { get; set; }
+    public Song? Song { get; set; }
 
     public virtual User? User { get; set; }
 }

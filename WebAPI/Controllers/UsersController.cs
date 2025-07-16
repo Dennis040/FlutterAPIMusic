@@ -12,6 +12,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using WebAPI.DTO;
 using WebAPI.Models;
+using Microsoft.EntityFrameworkCore;
 
 namespace WebAPI.Controllers
 {
@@ -26,6 +27,70 @@ namespace WebAPI.Controllers
         {
             _context = context;
             _configuration = configuration;
+        }
+
+        // POST: api/Users/{userId}/history/{songId}
+        [HttpPost("{userId}/history/{songId}")]
+        public async Task<IActionResult> AddToHistory(int userId, int songId)
+        {
+            var existing = await _context.SongHistories
+                .FirstOrDefaultAsync(h => h.UserId == userId && h.SongId == songId);
+
+            if (existing != null)
+            {
+                existing.PlayTime = DateTime.UtcNow; // cập nhật thời gian nghe
+            }
+            else
+            {
+                var newHistory = new SongHistory
+                {
+                    UserId = userId,
+                    SongId = songId,
+                    PlayTime = DateTime.UtcNow
+                };
+                _context.SongHistories.Add(newHistory);
+            }
+
+            await _context.SaveChangesAsync();
+
+            return Ok();
+        }
+
+
+        [HttpGet("{userId}/history")]
+        public async Task<IActionResult> GetUserHistory(int userId)
+        {
+            var history = await _context.SongHistories
+                .Where(h => h.UserId == userId)
+                .Include(h => h.Song)
+                .OrderByDescending(h => h.PlayTime) 
+                .Select(h => new
+                {
+                    h.Song.SongId,
+                    h.Song.SongName,
+                    h.Song.Artist.ArtistName,
+                    h.Song.SongImage
+                })
+                .ToListAsync();
+
+            return Ok(history);
+        }
+
+        // DELETE: api/Users/{userId}/history
+        [HttpDelete("{userId}/history")]
+        public async Task<IActionResult> ClearUserHistory(int userId)
+        {
+            var histories = await _context.SongHistories
+                .Where(h => h.UserId == userId)
+                .ToListAsync();
+
+            if (!histories.Any())
+                return NoContent();
+
+            _context.SongHistories.RemoveRange(histories);
+            await _context.SaveChangesAsync();
+
+            return NoContent();
         }
 
         [HttpPost("{userId}/favorite-songs/{songId}")]
