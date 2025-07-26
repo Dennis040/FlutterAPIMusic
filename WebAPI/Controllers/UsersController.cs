@@ -13,6 +13,10 @@ using Microsoft.IdentityModel.Tokens;
 using WebAPI.DTO;
 using WebAPI.Models;
 using Microsoft.EntityFrameworkCore;
+using MimeKit;
+using MailKit.Net.Smtp;
+using Org.BouncyCastle.Crypto.Generators;
+
 
 namespace WebAPI.Controllers
 {
@@ -262,6 +266,17 @@ namespace WebAPI.Controllers
             {
                 return Unauthorized(new { message = "Sai tên đăng nhập hoặc mật khẩu." });
             }
+            if (!user.IsEmailVerified)
+            {
+                return BadRequest(new
+                {
+                    message = "Tài khoản chưa được xác thực email. Vui lòng kiểm tra email để xác thực.",
+                    errorCode = "EMAIL_NOT_VERIFIED",
+                    userId = user.UserId,
+                    email = user.Email,
+                    username = user.Username
+                });
+            }
 
             // Optionally hide the password when returning the user object  
             user.Password = null;
@@ -271,12 +286,14 @@ namespace WebAPI.Controllers
             // Trả user + token
             return Ok(new
             {
+                message = "Đăng nhập thành công",
                 accessToken = token,
                 userId = user.UserId,
                 username = user.Username,
                 email = user.Email,
+                role = user.Role,
+                isEmailVerified = user.IsEmailVerified
             });
-            return Ok(user);
         }
         private string GenerateJwtToken(User user)
         {
@@ -289,6 +306,7 @@ namespace WebAPI.Controllers
                 {
                     new Claim(ClaimTypes.NameIdentifier, user.UserId.ToString()),
                     new Claim(ClaimTypes.Name, user.Username),
+                    new Claim(ClaimTypes.Email, user.Email),
                     new Claim(ClaimTypes.Role, user.Role)
                 }),
                 Expires = DateTime.UtcNow.AddHours(2),
@@ -300,36 +318,187 @@ namespace WebAPI.Controllers
             var token = tokenHandler.CreateToken(tokenDescriptor);
             return tokenHandler.WriteToken(token);
         }
+        // Backend API Controller
         [HttpPost("register")]
-        public async Task<ActionResult<User>> Register([FromBody] WebAPI.DTO.RegisterRequest request)
+        public async Task<ActionResult<object>> Register([FromBody] WebAPI.DTO.RegisterRequest request)
         {
-            // Kiểm tra username hoặc email đã tồn tại
-            var existingUser = await _context.Users
-                .FirstOrDefaultAsync(u => u.Username == request.Username || u.Email == request.Email);
-
-            if (existingUser != null)
+            try
             {
-                return BadRequest(new { message = "Username hoặc Email đã tồn tại." });
+                // Kiểm tra username hoặc email đã tồn tại
+                var existingUser = await _context.Users
+                    .FirstOrDefaultAsync(u => u.Username == request.Username || u.Email == request.Email);
+
+                if (existingUser != null)
+                {
+                    return BadRequest(new { message = "Username hoặc Email đã tồn tại." });
+                }
+
+                // Tạo verification code
+                var verificationCode = GenerateVerificationCode();
+                var codeExpiry = DateTime.UtcNow.AddMinutes(15); // Code hết hạn sau 15 phút
+
+                // Tạo user mới với trạng thái chưa verify
+                var newUser = new User
+                {
+                    Username = request.Username,
+                    Email = request.Email,
+                    Password = request.Password, // Mã hóa password
+                    Phone = request.Phone,
+                    Role = request.Role ?? "member",
+                    IsEmailVerified = false,
+                    EmailVerificationCode = verificationCode,
+                    EmailVerificationExpiry = codeExpiry,
+                    CreatedAt = DateTime.UtcNow
+                };
+
+                _context.Users.Add(newUser);
+                await _context.SaveChangesAsync();
+
+                // Gửi email verification
+                await SendVerificationEmail(newUser.Email, newUser.Username, verificationCode);
+
+                return Ok(new
+                {
+                    message = "Đăng ký thành công! Vui lòng kiểm tra email để xác thực tài khoản.",
+                    userId = newUser.UserId,
+                    requiresVerification = true
+                });
             }
-
-            // Tạo user mới
-            var newUser = new User
+            catch (Exception ex)
             {
-                Username = request.Username,
-                Email = request.Email,
-                Password = request.Password, // Có thể mã hoá sau
-                Phone = request.Phone,
-                Role = request.Role ?? "member"
-            };
-
-            _context.Users.Add(newUser);
-            await _context.SaveChangesAsync();
-
-            // Xoá password trước khi trả về
-            newUser.Password = null;
-
-            return CreatedAtAction(nameof(GetUser), new { id = newUser.UserId }, newUser);
+                // Log error
+                return StatusCode(500, new { message = "Có lỗi xảy ra trong quá trình đăng ký." });
+            }
         }
+
+        [HttpPost("verify-email")]
+        public async Task<ActionResult> VerifyEmail([FromBody] EmailVerificationRequest request)
+        {
+            try
+            {
+                var user = await _context.Users
+                    .FirstOrDefaultAsync(u => u.UserId == request.UserId &&
+                                             u.EmailVerificationCode == request.VerificationCode);
+
+                if (user == null)
+                {
+                    return BadRequest(new { message = "Mã xác thực không hợp lệ." });
+                }
+
+                if (user.EmailVerificationExpiry < DateTime.UtcNow)
+                {
+                    return BadRequest(new { message = "Mã xác thực đã hết hạn." });
+                }
+
+                if (user.IsEmailVerified)
+                {
+                    return BadRequest(new { message = "Email đã được xác thực trước đó." });
+                }
+
+                // Cập nhật trạng thái verified
+                user.IsEmailVerified = true;
+                user.EmailVerificationCode = null;
+                user.EmailVerificationExpiry = null;
+                user.EmailVerifiedAt = DateTime.UtcNow;
+
+                await _context.SaveChangesAsync();
+
+                return Ok(new { message = "Xác thực email thành công!" });
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { message = "Có lỗi xảy ra trong quá trình xác thực." });
+            }
+        }
+
+        [HttpPost("resend-verification")]
+        public async Task<ActionResult> ResendVerification([FromBody] ResendVerificationRequest request)
+        {
+            try
+            {
+                var user = await _context.Users.FindAsync(request.UserId);
+
+                if (user == null)
+                {
+                    return NotFound(new { message = "Không tìm thấy người dùng." });
+                }
+
+                if (user.IsEmailVerified)
+                {
+                    return BadRequest(new { message = "Email đã được xác thực." });
+                }
+
+                // Tạo mã xác thực mới
+                var verificationCode = GenerateVerificationCode();
+                var codeExpiry = DateTime.UtcNow.AddMinutes(15);
+
+                user.EmailVerificationCode = verificationCode;
+                user.EmailVerificationExpiry = codeExpiry;
+
+                await _context.SaveChangesAsync();
+                await SendVerificationEmail(user.Email, user.Username, verificationCode);
+
+                return Ok(new { message = "Đã gửi lại mã xác thực." });
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { message = "Có lỗi xảy ra khi gửi lại mã xác thực." });
+            }
+        }
+
+        private async Task SendVerificationEmail(string toEmail, string username, string verificationCode)
+        {
+            try
+            {
+                var email = new MimeMessage();
+                email.From.Add(MailboxAddress.Parse("phantuankhang333@gmail.com"));
+                email.To.Add(MailboxAddress.Parse(toEmail));
+                email.Subject = "Xác thực tài khoản - Mã xác thực";
+
+                var htmlBody = $@"
+            <div style='font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;'>
+                <h2 style='color: #333;'>Xin chào {username}!</h2>
+                <p>Cảm ơn bạn đã đăng ký tài khoản. Để hoàn tất quá trình đăng ký, vui lòng sử dụng mã xác thực bên dưới:</p>
+                
+                <div style='background-color: #f5f5f5; padding: 20px; text-align: center; margin: 20px 0; border-radius: 8px;'>
+                    <h1 style='color: #007bff; font-size: 32px; margin: 0; letter-spacing: 4px;'>{verificationCode}</h1>
+                </div>
+                
+                <p><strong>Lưu ý:</strong> Mã này sẽ hết hạn sau 15 phút.</p>
+                <p>Nếu bạn không đăng ký tài khoản này, vui lòng bỏ qua email này.</p>
+                
+                <hr style='border: none; border-top: 1px solid #eee; margin: 30px 0;'>
+                <p style='color: #666; font-size: 12px;'>
+                    Email này được gửi tự động, vui lòng không trả lời.
+                </p>
+            </div>";
+
+                email.Body = new TextPart("html") { Text = htmlBody };
+
+                using var smtp = new SmtpClient();
+                await smtp.ConnectAsync("smtp.gmail.com", 465, true);
+                await smtp.AuthenticateAsync("phantuankhang333@gmail.com", "ohjt honx nhby ydxj");
+                await smtp.SendAsync(email);
+                await smtp.DisconnectAsync(true);
+            }
+            catch (Exception ex)
+            {
+                // Log error nhưng không throw để không làm gián đoạn flow đăng ký
+                Console.WriteLine($"Error sending email: {ex.Message}");
+            }
+        }
+
+        private string GenerateVerificationCode()
+        {
+            var random = new Random();
+            return random.Next(100000, 999999).ToString(); // Mã 6 số
+        }
+
+        //private string HashPassword(string password)
+        //{
+        //    // Sử dụng BCrypt hoặc phương pháp hash khác
+        //    return BCrypt.Net.BCrypt.HashPassword(password);
+        //}
 
         [HttpGet("{userId}/lib")]
         public async Task<ActionResult<UserLibDto>> GetUserProfile(int userId)
@@ -365,4 +534,5 @@ namespace WebAPI.Controllers
 
 
     }
+
 }

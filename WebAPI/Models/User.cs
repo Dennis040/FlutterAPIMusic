@@ -21,6 +21,17 @@ public partial class User
 
     public string? DeviceId { get; set; }
 
+
+    // Email verification fields
+    public bool IsEmailVerified { get; set; } = false;
+    public string? EmailVerificationCode { get; set; }
+    public DateTime? EmailVerificationExpiry { get; set; }
+    public DateTime? EmailVerifiedAt { get; set; }
+
+    // Timestamps
+    public DateTime? CreatedAt { get; set; }
+    public DateTime? UpdatedAt { get; set; }
+
     public virtual ICollection<HistorySong> HistorySongs { get; set; } = new List<HistorySong>();
 
     public virtual ICollection<HoaDonAdmin> HoaDonAdmins { get; set; } = new List<HoaDonAdmin>();
